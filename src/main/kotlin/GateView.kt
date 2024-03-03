@@ -2,10 +2,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.IntrinsicSize.Min
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -23,18 +21,17 @@ fun GateView(
     content: @Composable () -> Unit,
 ) {
     Row(
-        modifier = Modifier.height(Min).padding(4.dp),
+        modifier = Modifier.padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier =
-                Modifier
-                    .clip(CircleShape)
-                    .fillMaxHeight()
-                    .aspectRatio(ratio = 1f)
-                    .border(width = 3.dp, color = color, CircleShape)
-                    .let { if (breached) it.background(color) else it },
+            modifier = Modifier
+                .clip(CircleShape)
+                .height(24.dp)
+                .aspectRatio(ratio = 1f)
+                .border(width = 3.dp, color = color, CircleShape)
+                .let { if (breached) it.background(color) else it },
         )
         content()
     }

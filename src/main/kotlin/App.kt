@@ -26,9 +26,12 @@ fun App() {
         Scaffold {
             val currArduino = arduino
             if (currArduino == null) {
-                SelectSerialPortScreen(onSelected = {
-                    arduino = Arduino(portDescriptor = it.systemPortPath).apply { init() }
-                })
+                SelectSerialPortScreen(
+                    onSelected = {
+                        // FIXME: catch init error
+                        arduino = Arduino(portDescriptor = it.systemPortPath).apply { init() }
+                    },
+                )
             } else {
                 MainContentScreen(arduino = currArduino)
             }

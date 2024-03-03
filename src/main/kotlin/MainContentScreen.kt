@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -14,6 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,14 +30,20 @@ import domain.Gate.GATE_1
 import domain.Gate.GATE_2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toKotlinDuration
+import java.time.Duration as JDuration
+
+private val startSoundFile = getResource("sounds/start.wav")!! // FIXME
 
 @Composable
 fun MainContentScreen(arduino: Arduino) {
+    val coroutineContext = rememberCoroutineScope()
+    var starting by remember { mutableStateOf(false) }
     var startTime by remember { mutableStateOf<LocalDateTime?>(null) }
     var elapsedTime by remember(startTime) { mutableStateOf(0.seconds) }
     var communicationError by remember { mutableStateOf(false) }
@@ -47,22 +55,20 @@ fun MainContentScreen(arduino: Arduino) {
         withContext(Dispatchers.IO) {
             while (true) {
                 try {
-                    gateState = arduino.waitStateChange(gateState)
-                    val now = LocalDateTime.now()
+                    gateState = arduino.getState()
                     if (startTime != null) {
+                        val now = LocalDateTime.now()
                         if (gateState.gate1 && gate1Time == null) {
-                            gate1Time =
-                                java.time.Duration.between(startTime, now).toKotlinDuration()
+                            gate1Time = JDuration.between(startTime, now).toKotlinDuration()
                         }
                         if (gateState.gate2 && gate2Time == null) {
-                            gate2Time =
-                                java.time.Duration.between(startTime, now).toKotlinDuration()
+                            gate2Time = JDuration.between(startTime, now).toKotlinDuration()
                         }
                     }
                 } catch (e: SerialPortIOException) {
                     // port disconnected
                     communicationError = true
-                    while (!arduino.tryReopen()) continue
+                    while (!arduino.reopen()) continue
                     communicationError = false
                 }
             }
@@ -79,8 +85,22 @@ fun MainContentScreen(arduino: Arduino) {
         }
     }
 
+    fun start() {
+        if (!starting && startTime == null && !gateState.gate1 && !gateState.gate2) {
+            coroutineContext.launch {
+                starting = true
+                playSound(startSoundFile)
+                startTime = LocalDateTime.now()
+                gate1Time = null
+                gate2Time = null
+                starting = false
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -89,13 +109,10 @@ fun MainContentScreen(arduino: Arduino) {
                 fontWeight = FontWeight.Black,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    if (!gateState.gate1 && !gateState.gate2) {
-                        gate1Time = null
-                        gate2Time = null
-                        startTime = LocalDateTime.now()
-                    }
-                }, enabled = startTime == null && !gateState.gate1 && !gateState.gate2) {
+                Button(
+                    onClick = ::start,
+                    enabled = !starting && startTime == null && !gateState.gate1 && !gateState.gate2,
+                ) {
                     Text(text = "Start")
                 }
                 // FIXME: confirm reset
@@ -147,10 +164,11 @@ private fun Gate(
             breached = breached,
             color = if (error) Color.Red else gate.color,
         ) {
-            Row {
-                Text(text = "${gate.title}: ", fontWeight = FontWeight.Bold)
-                Text(text = (time ?: elapsedTime).fmt())
-            }
+            Text(
+                text = (time ?: elapsedTime).fmt(),
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleLarge,
+            )
         }
         // FIXME: confirm clear?
         Button(

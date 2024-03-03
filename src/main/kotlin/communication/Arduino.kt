@@ -47,19 +47,11 @@ class Arduino(
         }
     }
 
-    fun waitStateChange(initial: GateState): GateState {
-        requireStarted()
-        while (true) {
-            val newState = getState()
-            if (newState != initial) return newState
-        }
-    }
-
     fun close() {
         port.closePort()
     }
 
-    fun tryReopen(): Boolean {
+    fun reopen(): Boolean {
         port.closePort()
         return port.openPort()
     }
