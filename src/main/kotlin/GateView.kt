@@ -26,12 +26,13 @@ fun GateView(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier
-                .clip(CircleShape)
-                .height(24.dp)
-                .aspectRatio(ratio = 1f)
-                .border(width = 3.dp, color = color, CircleShape)
-                .let { if (breached) it.background(color) else it },
+            modifier =
+                Modifier
+                    .clip(CircleShape)
+                    .height(24.dp)
+                    .aspectRatio(ratio = 1f)
+                    .border(width = 3.dp, color = color, CircleShape)
+                    .let { if (breached) it.background(color) else it },
         )
         content()
     }

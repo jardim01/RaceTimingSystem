@@ -2,16 +2,21 @@ package communication
 
 import com.fazecast.jSerialComm.SerialPort
 import com.fazecast.jSerialComm.SerialPortIOException
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.toKotlinLocalDateTime
+import now
 import kotlin.experimental.and
 
 class Arduino(
     portDescriptor: String,
     private val baudRate: Int = 9600,
     private val dataBits: Int = 8,
-    private val stopBits: Int = 1,
-    private val parity: Int = 0,
+    private val stopBits: Int = SerialPort.ONE_STOP_BIT,
+    private val parity: Int = SerialPort.NO_PARITY,
 ) {
     private val port = SerialPort.getCommPort(portDescriptor)
+    var lastPacketReceivedAt: LocalDateTime = java.time.LocalDateTime.MIN.toKotlinLocalDateTime()
+        private set
 
     companion object {
         private const val PACKET_SIZE = 1
@@ -35,6 +40,7 @@ class Arduino(
             if (available != PACKET_SIZE) continue
             val buffer = ByteArray(PACKET_SIZE)
             port.readBytes(buffer, PACKET_SIZE)
+            lastPacketReceivedAt = LocalDateTime.now()
             ack()
 
             // xxxxxxxAB

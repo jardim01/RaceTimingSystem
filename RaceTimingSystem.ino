@@ -24,12 +24,13 @@ void loop() {
   Serial.flush();
 
   long iterations = 0;
-  while (Serial.available() <= 0) {
+  while (Serial.read() == -1) {
     // wait for a few iterations before turning on LED (cannot blink that fast)
-    if (iterations++ > 1200) {
+    if (iterations < 1400) {
+      iterations++;
+    } else {
       digitalWrite(WAITING_LED, 1);
     }
   }
-  Serial.read();
   digitalWrite(WAITING_LED, 0);
 }

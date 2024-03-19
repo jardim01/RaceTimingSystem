@@ -3,6 +3,6 @@ package domain
 import androidx.compose.ui.graphics.Color
 
 enum class Gate(val number: Int, val title: String, val color: Color) {
-    GATE_1(1, "Gate 1", Color.Blue),
-    GATE_2(2, "Gate 2", Color.Yellow),
+    BLUE_GATE(number = 1, title = "Blue", color = Color(0xFF1E90FF)),
+    YELLOW_GATE(number = 2, title = "Yellow", color = Color(0xFFFFC800)),
 }

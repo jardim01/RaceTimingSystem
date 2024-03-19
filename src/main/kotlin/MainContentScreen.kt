@@ -1,15 +1,10 @@
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -19,171 +14,180 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.fazecast.jSerialComm.SerialPortIOException
 import communication.Arduino
 import communication.GateState
 import domain.Gate
-import domain.Gate.GATE_1
-import domain.Gate.GATE_2
-import kotlinx.coroutines.Dispatchers
+import domain.Gate.BLUE_GATE
+import domain.Gate.YELLOW_GATE
+import domain.RaceTimes
+import domain.Racer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.time.LocalDateTime
+import kotlinx.datetime.LocalDateTime
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToStream
+import net.harawata.appdirs.AppDirsFactory
+import kotlin.io.path.Path
+import kotlin.io.path.createFile
+import kotlin.io.path.createParentDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.inputStream
+import kotlin.io.path.moveTo
+import kotlin.io.path.outputStream
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toKotlinDuration
-import java.time.Duration as JDuration
+import kotlin.time.Duration.Companion.milliseconds
 
-private val startSoundFile = getResource("sounds/start.wav")!! // FIXME
+private val appDataPath = Path(AppDirsFactory.getInstance().getUserDataDir("RaceTimingSystem", null, null, false))
+private val backupsPath = appDataPath.resolve("backups")
+private val racersFilePath = appDataPath.resolve("racers.json")
+private val startSoundResourcePath = "sounds/start.wav"
 
 @Composable
-fun MainContentScreen(arduino: Arduino) {
-    val coroutineContext = rememberCoroutineScope()
+fun MainScreen(arduino: Arduino) {
+    val coroutineScope = rememberCoroutineScope()
+
+    var racers by remember { mutableStateOf(loadRacers()) }
     var starting by remember { mutableStateOf(false) }
-    var startTime by remember { mutableStateOf<LocalDateTime?>(null) }
-    var elapsedTime by remember(startTime) { mutableStateOf(0.seconds) }
-    var communicationError by remember { mutableStateOf(false) }
-    var gateState by remember { mutableStateOf(GateState(gate1 = false, gate2 = false)) }
-    var gate1Time by remember { mutableStateOf<Duration?>(null) }
-    var gate2Time by remember { mutableStateOf<Duration?>(null) }
+    val startTime = remember { mutableStateOf<LocalDateTime?>(null) }
+    val gateState = remember { mutableStateOf(GateState(gate1 = false, gate2 = false)) }
+    val gate1FinishTime = remember { mutableStateOf<LocalDateTime?>(null) }
+    val gate2FinishTime = remember { mutableStateOf<LocalDateTime?>(null) }
+    var delayError by remember { mutableStateOf(false) }
+    val communicationError = remember { mutableStateOf(false) }
+
+    LaunchedEffect(racers) {
+        saveRacers(racers)
+    }
 
     LaunchedEffect(arduino) {
-        withContext(Dispatchers.IO) {
-            while (true) {
-                try {
-                    gateState = arduino.getState()
-                    if (startTime != null) {
-                        val now = LocalDateTime.now()
-                        if (gateState.gate1 && gate1Time == null) {
-                            gate1Time = JDuration.between(startTime, now).toKotlinDuration()
-                        }
-                        if (gateState.gate2 && gate2Time == null) {
-                            gate2Time = JDuration.between(startTime, now).toKotlinDuration()
-                        }
-                    }
-                } catch (e: SerialPortIOException) {
-                    // port disconnected
-                    communicationError = true
-                    while (!arduino.reopen()) continue
-                    communicationError = false
-                }
-            }
+        while (true) {
+            delayError = Duration.between(arduino.lastPacketReceivedAt, LocalDateTime.now()) > 500.milliseconds
+            delay(100.milliseconds)
         }
     }
 
-    LaunchedEffect(startTime) {
-        val t0 = startTime
-        if (t0 != null) {
-            while (true) {
-                elapsedTime = java.time.Duration.between(t0, LocalDateTime.now()).toKotlinDuration()
-                delay(100)
-            }
-        }
-    }
+    GateWatcher(
+        arduino = arduino,
+        gateState = gateState,
+        startTime = startTime,
+        gate1FinishTime = gate1FinishTime,
+        gate2FinishTime = gate2FinishTime,
+        communicationError = communicationError,
+    )
 
     fun start() {
-        if (!starting && startTime == null && !gateState.gate1 && !gateState.gate2) {
-            coroutineContext.launch {
+        if (!starting && startTime.value == null && !gateState.value.gate1 && !gateState.value.gate2) {
+            coroutineScope.launch {
                 starting = true
-                playSound(startSoundFile)
-                startTime = LocalDateTime.now()
-                gate1Time = null
-                gate2Time = null
+                playSound(startSoundResourcePath)
+                startTime.value = LocalDateTime.now()
+                gate1FinishTime.value = null
+                gate2FinishTime.value = null
                 starting = false
             }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = elapsedTime.fmt(),
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Black,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = ::start,
-                    enabled = !starting && startTime == null && !gateState.gate1 && !gateState.gate2,
-                ) {
-                    Text(text = "Start")
-                }
-                // FIXME: confirm reset
-                Button(onClick = { startTime = null }, enabled = startTime != null, colors = dangerButtonColors()) {
-                    Text(text = "Reset")
-                }
+    fun reset() {
+        startTime.value = null
+        gate1FinishTime.value = null
+        gate2FinishTime.value = null
+    }
+
+    fun clearGate(gate: Gate) {
+        when (gate) {
+            BLUE_GATE -> gate1FinishTime.value = null
+            YELLOW_GATE -> gate2FinishTime.value = null
+        }
+    }
+
+    fun addRacer(racer: Racer) {
+        racers = (racers + racer).distinctBy { it.id }
+    }
+
+    fun assignGateTime(
+        gate: Gate,
+        racerId: Int,
+    ) {
+        val t0 = startTime.value
+        val t1 =
+            when (gate) {
+                BLUE_GATE -> gate1FinishTime.value
+                YELLOW_GATE -> gate2FinishTime.value
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            // FIXME: confirm clear?
-            Gate(
-                gate = GATE_1,
-                breached = gateState.gate1,
-                time = gate1Time,
-                elapsedTime = elapsedTime,
-                error = communicationError,
-                onClearTime = { gate1Time = null },
-            )
-            // FIXME: confirm clear?
-            Gate(
-                gate = GATE_2,
-                breached = gateState.gate2,
-                time = gate2Time,
-                elapsedTime = elapsedTime,
-                error = communicationError,
-                onClearTime = { gate2Time = null },
-            )
+        if (t0 == null || t1 == null) return
+        val raceTimes = RaceTimes(gate = gate, start = t0, finish = t1)
+        // Cannot assign the same result to multiple racers
+        if (racers.none { it.times == raceTimes }) {
+            racers =
+                racers.map {
+                    if (it.id != racerId) it else it.copy(times = raceTimes)
+                }
         }
+    }
+
+    fun clearTime(racerId: Int) {
+        racers =
+            racers.map {
+                if (it.id != racerId) it else it.copy(times = null)
+            }
+    }
+
+    val enableStart =
+        !starting && startTime.value == null && !gateState.value.gate1 && !gateState.value.gate2
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(top = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(32.dp),
+    ) {
+        Chrono(
+            startTime = startTime.value,
+            onReset = if (startTime.value == null) null else ::reset,
+            onStart = if (!enableStart) null else ::start,
+            gateState = gateState.value,
+            gate1FinishTime = gate1FinishTime.value,
+            gate2FinishTime = gate2FinishTime.value,
+            onClearGate = ::clearGate,
+            communicationError = communicationError.value || delayError,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        RacersTable(
+            racers = racers,
+            onAddRacer = ::addRacer,
+            allowAssigningTimes = gate1FinishTime.value != null && gate2FinishTime.value != null,
+            onAssignGateTime = ::assignGateTime,
+            onClearRacerTime = ::clearTime,
+            modifier = Modifier.verticalScroll(state = rememberScrollState()).padding(horizontal = 32.dp),
+        )
     }
 }
 
-@Composable
-fun dangerButtonColors() =
-    ButtonDefaults.buttonColors(
-        containerColor = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-    )
-
-@Composable
-private fun Gate(
-    gate: Gate,
-    breached: Boolean,
-    time: Duration?,
-    elapsedTime: Duration,
-    error: Boolean,
-    onClearTime: () -> Unit,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        GateView(
-            breached = breached,
-            color = if (error) Color.Red else gate.color,
-        ) {
-            Text(
-                text = (time ?: elapsedTime).fmt(),
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleLarge,
-            )
-        }
-        // FIXME: confirm clear?
-        Button(
-            onClick = onClearTime,
-            enabled = time != null && !breached,
-            colors = dangerButtonColors(),
-        ) {
-            Text(text = "Clear")
-        }
+@OptIn(ExperimentalSerializationApi::class)
+fun loadRacers(): List<Racer> {
+    try {
+        return Json.decodeFromStream(racersFilePath.inputStream())
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
+    return emptyList()
 }
 
-private fun Duration.fmt(): String {
-    val minutes = inWholeMinutes
-    val seconds = inWholeSeconds - minutes * 60
-    val milliseconds = inWholeMilliseconds - minutes * 60 * 1000 - seconds * 1000
-    return String.format("%02d:%02d.%03d", minutes, seconds, milliseconds)
+@OptIn(ExperimentalSerializationApi::class)
+fun saveRacers(racers: List<Racer>) {
+    if (!racersFilePath.exists()) {
+        racersFilePath.createParentDirectories()
+        racersFilePath.createFile()
+    }
+    try {
+        val backupPath = backupsPath.resolve(System.nanoTime().toString() + "${System.currentTimeMillis()}.json")
+        backupPath.createParentDirectories()
+        racersFilePath.moveTo(backupPath)
+        Json.encodeToStream(racers, racersFilePath.outputStream())
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 }

@@ -1,17 +1,22 @@
+import androidx.compose.ui.res.useResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
+import java.io.BufferedInputStream
 import javax.sound.sampled.AudioInputStream
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.LineEvent
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-suspend fun playSound(file: File) {
+suspend fun playSound(resourcePath: String) {
     withContext(Dispatchers.IO) {
-        val audioInputStream = AudioSystem.getAudioInputStream(file)
-        playSound(audioInputStream)
-        audioInputStream.close()
+        useResource(resourcePath) { inputStream ->
+            // required after packaging
+            val bufferedInputStream = BufferedInputStream(inputStream)
+            val audioInputStream = AudioSystem.getAudioInputStream(bufferedInputStream)
+            playSound(audioInputStream)
+            audioInputStream.close()
+        }
     }
 }
 
